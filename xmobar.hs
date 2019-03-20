@@ -1,16 +1,34 @@
-Config { font = "xft:Terminus"
+Config { font = "xft:xos4 Terminus"
        , bgColor = "black"
-       , fgColor = "grey"
-       , position = TopW L 95
+       , fgColor = "#777777"
+       , position = TopW L 98
        , lowerOnStart = True
-       , commands = [ Run BatteryP ["BAT0"] ["-t", "bat: <acstatus> <left>%", "-L", "10", "-H", "80", "-p", "3","--", "-O", "<fc=green>On</fc> - ", "-i", "","-L", "-15", "-H", "-5", "-l", "red", "-m", "blue", "-h", "green"] 600
-                    , Run Weather "LHBP" ["-t"," <tempC>C","-L","64","-H","77","--normal","green","--high","red","--low","lightblue"] 36000
-                    , Run Cpu ["-L","3","-H","50","--normal","green","--high","red"] 20
-                    , Run Memory ["-t","Mem: <usedratio>%"] 10
+       , hideOnStart  = False
+       , persistent   = True
+       , commands = [ Run Battery [ 
+                            "-t" , "bat: <acstatus> <left>%"
+                            , "--Low"      , "10"
+                            , "--High"     , "80"
+                            , "--low"      , "darkred"
+                            , "--normal"   , "darkorange"
+                            , "--high"     , "darkgreen"
+                            , "--" -- battery specific options
+                                       -- discharging status
+                                       , "-o" , "<fc=darkred>-</fc>(<timeleft>)"
+                                       -- AC "on" status
+                                       , "-O" , "<fc=darkorange>+</fc>(<timeleft>)"
+                                       -- charged status
+                                       , "-i" , ""
+                             ] 50
+                    , Run Cpu ["-t","cpu: <total>%", "-L","3","-H","50","--normal","darkgreen","--high","red"] 30
+                    , Run CoreTemp [ "-t" , "<core0>°C", "--Low", "70", "--High", "80", "--low", "darkgreen", "--normal", "darkorange", "--high", "darkred" ] 50
+                    , Run Memory ["-t","mem: <usedratio>%"] 10
                     , Run Date "%a %b %_d %H:%M" "date" 10
+                    , Run Wireless "wlp3s0" [ "-t", "<essid> <qualityvbar>" ] 20
+                    , Run MPD ["-t", "<state>: <file>"] 10
                     , Run StdinReader
                     ]
        , sepChar = "%"
        , alignSep = "}{"
-       , template = "%StdinReader% }{ %battery% | %cpu% | %memory%    <fc=#ee9a00>%date%</fc> | %LHBP%"
+       , template = "%StdinReader% }{ %mpd% | %wlp3s0wi% | %battery% | %cpu% %coretemp% | %memory% | <fc=darkorange>%date%</fc>"
        }
