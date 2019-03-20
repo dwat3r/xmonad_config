@@ -1,4 +1,5 @@
 import XMonad
+import XMonad.Actions.WorkspaceNames
 import XMonad.Hooks.DynamicLog
 import XMonad.Hooks.ManageDocks
 import XMonad.Hooks.SetWMName
@@ -28,7 +29,7 @@ todo:
 -}
 mmask = mod4Mask
 
-main = dom
+main = do
   xmproc <- spawnPipe "xmobar /home/oliver/.xmonad/xmobar.hs"
   xmonad $ fullscreenSupport $ def
     { modMask             = mmask
@@ -42,12 +43,13 @@ main = dom
                           $ smartBorders 
                           $ layoutHook def
     , handleEventHook     = handleEventHook def <+> docksEventHook
-    , logHook             = dynamicLogWithPP xmobarPP
+    , logHook             = workspaceNamesPP xmobarPP
       { ppOutput            = hPutStrLn xmproc
       , ppTitle             = xmobarColor "grey" "black" . shorten 200
-      , ppCurrent           = xmobarColor "#CEFFAC" "" . wrap "<" ">"
+      , ppCurrent           = xmobarColor "#CEFFAC" "black" . wrap "<" ">"
       , ppSep               = "   "
-      }
+      } >>= dynamicLogWithPP
+      
     } `additionalKeysP` [
       ("M-p",     spawn "yegonesh"),
       ("M-]",     spawn "slock"),
@@ -64,6 +66,7 @@ main = dom
       ("M-C-<U>", shiftTo Prev EmptyWS),
       ("M-C-c",   spawn "/home/oliver/scripts/keylayoutchanger.sh"),
       ("M-S-C-]", spawn "/home/oliver/scripts/monitor_switcher.sh"),
+      ("M-S-r",   renameWorkspace def),
       -- mpd
       ("<XF86AudioPlay>", spawn "mpc toggle"),
       ("<XF86AudioPrev>", spawn "mpc prev"),
