@@ -44,6 +44,8 @@ manageZoomHook =
     shouldFloat title = title `notElem` tileTitles
     shouldSink title = title `elem` tileTitles
     doSink = (ask >>= doF . W.sink) <+> doF W.swapDown
+    
+manageZenityHook = className =? "Zenity" --> doFloat
 
 main = do
   xmproc <- spawnPipe "/usr/bin/xmobar /home/oliver/.xmonad/xmobar.hs"
@@ -57,6 +59,7 @@ main = do
           startupHook = setWMName "LG3D",
           manageHook =
             manageZoomHook
+              <+> manageZenityHook
               <+> placeHook (withGaps (16, 0, 16, 0) (smart (0.5, 0.5)))
               <+> manageDocks
               <+> manageHook def,
