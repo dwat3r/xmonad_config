@@ -1,6 +1,7 @@
 import Control.Monad (join, when)
 import qualified Control.Monad.RWS as Data.Semigroup.Internal
 import Data.Maybe (maybeToList)
+import qualified GHC.IO.Handle as GHC.IO.Handle.Types
 import qualified Graphics.X11 as Graphics.X11.Types
 import System.IO (hPutStrLn)
 import XMonad
@@ -39,8 +40,7 @@ import XMonad
     (-->),
     (<&&>),
     (<+>),
-    (=?),
-    (|||),
+    (=?), sendMessage, withFocused
   )
 import XMonad.Actions.CycleWS
   ( Direction1D (Next, Prev),
@@ -80,13 +80,14 @@ import XMonad.Hooks.StatusBar.PP
     xmobarPP,
   )
 import XMonad.Layout.NoBorders (noBorders, smartBorders)
-import XMonad.Layout.SimplestFloat (simplestFloat)
-import XMonad.Layout.Tabbed (simpleTabbed)
+import XMonad.Util.Types ( Direction2D(D, L, R, U) )
 import XMonad.Layout.ToggleLayouts (toggleLayouts)
 import qualified XMonad.StackSet as W
 import XMonad.Util.EZConfig (additionalKeysP)
 import XMonad.Util.Run (spawnPipe)
-import qualified GHC.IO.Handle as GHC.IO.Handle.Types
+import XMonad.Layout.WindowNavigation (windowNavigation)
+import XMonad.Layout.SubLayouts (subTabbed, pullGroup, GroupMsg (MergeAll, UnMerge), onGroup)
+import XMonad.Layout.BoringWindows (boringWindows, focusDown, focusUp)
 
 {-
 todo:
@@ -146,16 +147,23 @@ addEWMHFullscreen = do
 xmobar :: IO GHC.IO.Handle.Types.Handle
 xmobar = spawnPipe "xmobar /home/oliver/.xmonad/xmobar.hs"
 
+layout =
+  windowNavigation $ subTabbed $ boringWindows $
+  avoidStruts $
+    toggleLayouts (noBorders Full) $
+      smartBorders $
+        layoutHook def
+
 main :: IO ()
 main = do
-  xmproc <- xmobar 
+  xmproc <- xmobar
   xmonad $
     ewmhFullscreen $
       ewmh $
         docks $
           def
             { modMask = mmask,
-              normalBorderColor = "#7c7c7c",
+              normalBorderColor = "#000000",
               focusedBorderColor = "#ffb6b0",
               terminal = "alacritty",
               startupHook = setWMName "LG3D" >> addEWMHFullscreen,
@@ -166,12 +174,7 @@ main = do
                   <+> manageDocks
                   <+> (isFullscreen --> doFullFloat)
                   <+> manageHook def,
-              layoutHook =
-                avoidStruts $
-                  toggleLayouts (noBorders Full) $
-                    smartBorders $
-                      layoutHook def ||| simpleTabbed
-                        ||| simplestFloat,
+              layoutHook = layout,
               handleEventHook = dynamicTitle manageZoomHook <+> handleEventHook def,
               logHook =
                 workspaceNamesPP
@@ -183,7 +186,8 @@ main = do
                     }
                   >>= dynamicLogWithPP
             }
-            `additionalKeysP` [ ("M-p", spawn "yegonesh"),
+            `additionalKeysP` [ ("M-p", spawn "rofi -show drun"),
+                                ("M-r", spawn "rofi -show drun"),
                                 ("M-]", spawn "slock"),
                                 ("M-<D>", nextWS),
                                 ("M-<U>", prevWS),
@@ -207,9 +211,19 @@ main = do
                                 ("M-<XF86AudioLowerVolume>", spawn "mpc volume -2"),
                                 ("M-<XF86AudioRaiseVolume>", spawn "mpc volume +2"),
                                 ("<XF86AudioLowerVolume>", spawn "amixer -q sset Master 3%-"),
-                                ("<XF86AudioRaiseVolume>", spawn "amixer -q sset Master 3%+")
+                                ("<XF86AudioRaiseVolume>", spawn "amixer -q sset Master 3%+"),
                                 -- ("<XF86MonBrightnessDown>", spawn ""),
                                 -- ("<XF86MonBrightnessUp>",   spawn ""),
                                 -- ("M-<F10>", spawn ""),
                                 -- ("M-<F11>", spawn "")
+                                 ("M-C-h", sendMessage $ pullGroup L),
+                                 ("M-C-l", sendMessage $ pullGroup R),
+                                 ("M-C-k", sendMessage $ pullGroup U),
+                                 ("M-C-j", sendMessage $ pullGroup D),
+                                 ("M-C-m", withFocused (sendMessage . MergeAll)),
+                                 ("M-C-u", withFocused (sendMessage . UnMerge)),
+                                 ("M-<Tab>", onGroup W.focusUp'),
+                                 ("M-S-<Tab>", onGroup W.focusDown'),
+                                 ("M-j", focusDown),
+                                 ("M-k", focusUp)
                               ]
