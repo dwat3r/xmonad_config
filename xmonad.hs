@@ -1,17 +1,16 @@
-import Control.Monad (join, when)
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ParallelListComp #-}
+{-# LANGUAGE PatternGuards #-}
+
 import qualified Control.Monad.RWS as Data.Semigroup.Internal
-import Data.Maybe (maybeToList)
 import qualified GHC.IO.Handle as GHC.IO.Handle.Types
 import qualified Graphics.X11 as Graphics.X11.Types
 import System.IO (hPutStrLn)
 import XMonad
-  ( Atom,
-    Default (def),
+  ( Default (def),
     Full (Full),
-    MonadIO (liftIO),
-    MonadReader (ask),
-    X,
-    XConf (theRoot),
     XConfig
       ( focusedBorderColor,
         handleEventHook,
@@ -23,24 +22,17 @@ import XMonad
         startupHook,
         terminal
       ),
-    asks,
-    changeProperty32,
     className,
-    composeAll,
-    doF,
     doFloat,
-    getAtom,
-    getWindowProperty32,
+    liftX,
     mod4Mask,
-    propModeAppend,
+    sendMessage,
     spawn,
-    title,
-    withDisplay,
+    withFocused,
     xmonad,
     (-->),
-    (<&&>),
     (<+>),
-    (=?), sendMessage, withFocused
+    (=?),
   )
 import XMonad.Actions.CycleWS
   ( Direction1D (Next, Prev),
@@ -56,12 +48,12 @@ import XMonad.Actions.CycleWS
     shiftToPrev,
     toggleWS,
   )
+import XMonad.Actions.SpawnOn (spawnAndDo)
 import XMonad.Actions.WorkspaceNames
   ( renameWorkspace,
     workspaceNamesPP,
   )
 import qualified XMonad.Core (Query, WindowSet)
-import XMonad.Hooks.DynamicProperty (dynamicTitle)
 import XMonad.Hooks.EwmhDesktops (ewmh, ewmhFullscreen)
 import XMonad.Hooks.ManageDocks
   ( avoidStruts,
@@ -79,21 +71,26 @@ import XMonad.Hooks.StatusBar.PP
     xmobarColor,
     xmobarPP,
   )
+import XMonad.Layout.BoringWindows (boringWindows, focusDown, focusUp)
+import XMonad.Layout.Decoration (Theme (activeColor, activeTextColor, decoHeight, fontName, inactiveColor, inactiveTextColor), shrinkText)
+import XMonad.Layout.Magnifier
 import XMonad.Layout.NoBorders (noBorders, smartBorders)
-import XMonad.Util.Types ( Direction2D(D, L, R, U) )
+import XMonad.Layout.Simplest (Simplest (Simplest))
+import XMonad.Layout.SubLayouts (GroupMsg (MergeAll, UnMerge), onGroup, pullGroup, subLayout)
+import XMonad.Layout.Tabbed (addTabs)
 import XMonad.Layout.ToggleLayouts (toggleLayouts)
+import XMonad.Layout.TrackFloating
+import XMonad.Layout.WindowNavigation (windowNavigation)
 import qualified XMonad.StackSet as W
 import XMonad.Util.EZConfig (additionalKeysP)
 import XMonad.Util.Run (spawnPipe)
-import XMonad.Layout.WindowNavigation (windowNavigation)
-import XMonad.Layout.SubLayouts (subTabbed, pullGroup, GroupMsg (MergeAll, UnMerge), onGroup)
-import XMonad.Layout.BoringWindows (boringWindows, focusDown, focusUp)
+import XMonad.Util.Types (Direction2D (D, L, R, U))
 
 {-
-todo:
  -fix "xrandr: Configure crtc 1 failed" when reconnecting external work monitors after sleep
   -> watch for xorg issue and see if it fixed yet in latest
  - make a systemd trigger for the monitor plug-in/out -> make it fail (Xorg and random cable unplug) safe
+ todo:
  - experiment with sessions
  - find out how to connect to a new network easily with netctl
  - try st
@@ -103,56 +100,37 @@ todo:
 mmask :: Graphics.X11.Types.KeyMask
 mmask = mod4Mask
 
-manageZoomHook ::
-  XMonad.Core.Query
-    (Data.Semigroup.Internal.Endo XMonad.Core.WindowSet)
-manageZoomHook =
-  composeAll
-    [ (className =? zoomClassName) <&&> shouldFloat <$> title --> doFloat,
-      (className =? zoomClassName) <&&> shouldSink <$> title --> doSink
-    ]
-  where
-    zoomClassName = "zoom"
-    tileTitles =
-      [ "Zoom - Free Account", -- main window,
-        "Zoom - Licensed Account", -- main window,
-        "Zoom", -- meeting window on creation,
-        "Zoom Meeting" -- meeting window shortly after creation
-      ]
-    shouldFloat zoomTitle = zoomTitle `notElem` tileTitles
-    shouldSink zoomTitle = zoomTitle `elem` tileTitles
-    doSink = (ask >>= doF . W.sink) <+> doF W.swapDown
-
 manageZenityHook ::
   XMonad.Core.Query
     (Data.Semigroup.Internal.Endo XMonad.Core.WindowSet)
 manageZenityHook = className =? "Zenity" --> doFloat
 
-addNETSupported :: Atom -> X ()
-addNETSupported x = withDisplay $ \dpy -> do
-  r <- asks theRoot
-  a_NET_SUPPORTED <- getAtom "_NET_SUPPORTED"
-  a <- getAtom "ATOM"
-  liftIO $ do
-    sup <- join . maybeToList <$> getWindowProperty32 dpy a_NET_SUPPORTED r
-    when (fromIntegral x `notElem` sup) $
-      changeProperty32 dpy r a_NET_SUPPORTED a propModeAppend [fromIntegral x]
-
-addEWMHFullscreen :: X ()
-addEWMHFullscreen = do
-  wms <- getAtom "_NET_WM_STATE"
-  wfs <- getAtom "_NET_WM_STATE_FULLSCREEN"
-  mapM_ addNETSupported [wms, wfs]
-
 xmobar :: IO GHC.IO.Handle.Types.Handle
 xmobar = spawnPipe "xmobar /home/oliver/.xmonad/xmobar.hs"
 
+tabConfig :: Theme
+tabConfig =
+  def
+    { fontName = "xft:Terminus",
+      decoHeight = 20,
+      activeColor = "#818380",
+      inactiveColor = "#333333",
+      activeTextColor = "#000000",
+      inactiveTextColor = "#bbbbbb"
+    }
+
+subTabbed' x = addTabs shrinkText tabConfig $ subLayout [] Simplest x
+
 layout =
-  windowNavigation $ subTabbed $ boringWindows $
-  avoidStruts $
-    toggleLayouts (noBorders Full) $
-      smartBorders $
-        layoutHook def
+  trackFloating $
+    useTransientFor $
+      windowNavigation $
+        subTabbed' $
+          boringWindows $
+            avoidStruts $
+              toggleLayouts (noBorders Full) $
+                smartBorders $
+                  layoutHook def
 
 main :: IO ()
 main = do
@@ -166,16 +144,15 @@ main = do
               normalBorderColor = "#000000",
               focusedBorderColor = "#ffb6b0",
               terminal = "alacritty",
-              startupHook = setWMName "LG3D" >> addEWMHFullscreen,
+              startupHook = setWMName "LG3D",
               manageHook =
-                manageZoomHook
-                  <+> manageZenityHook
+                manageZenityHook
                   <+> placeHook (withGaps (16, 0, 16, 0) (smart (0.5, 0.5)))
                   <+> manageDocks
                   <+> (isFullscreen --> doFullFloat)
                   <+> manageHook def,
               layoutHook = layout,
-              handleEventHook = dynamicTitle manageZoomHook <+> handleEventHook def,
+              handleEventHook = handleEventHook def,
               logHook =
                 workspaceNamesPP
                   xmobarPP
@@ -187,7 +164,7 @@ main = do
                   >>= dynamicLogWithPP
             }
             `additionalKeysP` [ ("M-p", spawn "rofi -show drun"),
-                                ("M-r", spawn "rofi -show drun"),
+                                -- ("M-S-p", spawnAndDo (liftX (withFocused (sendMessage $ pullGroup L))) "rofi -show drun"),
                                 ("M-]", spawn "slock"),
                                 ("M-<D>", nextWS),
                                 ("M-<U>", prevWS),
@@ -216,14 +193,14 @@ main = do
                                 -- ("<XF86MonBrightnessUp>",   spawn ""),
                                 -- ("M-<F10>", spawn ""),
                                 -- ("M-<F11>", spawn "")
-                                 ("M-C-h", sendMessage $ pullGroup L),
-                                 ("M-C-l", sendMessage $ pullGroup R),
-                                 ("M-C-k", sendMessage $ pullGroup U),
-                                 ("M-C-j", sendMessage $ pullGroup D),
-                                 ("M-C-m", withFocused (sendMessage . MergeAll)),
-                                 ("M-C-u", withFocused (sendMessage . UnMerge)),
-                                 ("M-<Tab>", onGroup W.focusUp'),
-                                 ("M-S-<Tab>", onGroup W.focusDown'),
-                                 ("M-j", focusDown),
-                                 ("M-k", focusUp)
+                                ("M-C-h", sendMessage $ pullGroup L),
+                                ("M-C-l", sendMessage $ pullGroup R),
+                                ("M-C-k", sendMessage $ pullGroup U),
+                                ("M-C-j", sendMessage $ pullGroup D),
+                                ("M-C-m", withFocused (sendMessage . MergeAll)),
+                                ("M-C-u", withFocused (sendMessage . UnMerge)),
+                                ("M-<Tab>", onGroup W.focusUp'),
+                                ("M-S-<Tab>", onGroup W.focusDown'),
+                                ("M-j", focusDown),
+                                ("M-k", focusUp)
                               ]
