@@ -24,7 +24,6 @@ import XMonad
       ),
     className,
     doFloat,
-    liftX,
     mod4Mask,
     sendMessage,
     spawn,
@@ -32,7 +31,7 @@ import XMonad
     xmonad,
     (-->),
     (<+>),
-    (=?),
+    (=?), (|||)
   )
 import XMonad.Actions.CycleWS
   ( Direction1D (Next, Prev),
@@ -48,7 +47,6 @@ import XMonad.Actions.CycleWS
     shiftToPrev,
     toggleWS,
   )
-import XMonad.Actions.SpawnOn (spawnAndDo)
 import XMonad.Actions.WorkspaceNames
   ( renameWorkspace,
     workspaceNamesPP,
@@ -73,8 +71,8 @@ import XMonad.Hooks.StatusBar.PP
   )
 import XMonad.Layout.BoringWindows (boringWindows, focusDown, focusUp)
 import XMonad.Layout.Decoration (Theme (activeColor, activeTextColor, decoHeight, fontName, inactiveColor, inactiveTextColor), shrinkText)
-import XMonad.Layout.Magnifier
 import XMonad.Layout.NoBorders (noBorders, smartBorders)
+import XMonad.Layout.SimpleFloat
 import XMonad.Layout.Simplest (Simplest (Simplest))
 import XMonad.Layout.SubLayouts (GroupMsg (MergeAll, UnMerge), onGroup, pullGroup, subLayout)
 import XMonad.Layout.Tabbed (addTabs)
@@ -85,6 +83,7 @@ import qualified XMonad.StackSet as W
 import XMonad.Util.EZConfig (additionalKeysP)
 import XMonad.Util.Run (spawnPipe)
 import XMonad.Util.Types (Direction2D (D, L, R, U))
+import XMonad.Layout.SimplestFloat
 
 {-
  -fix "xrandr: Configure crtc 1 failed" when reconnecting external work monitors after sleep
@@ -122,15 +121,15 @@ tabConfig =
 subTabbed' x = addTabs shrinkText tabConfig $ subLayout [] Simplest x
 
 layout =
-  trackFloating $
-    useTransientFor $
+  trackFloating
+    $ useTransientFor $
       windowNavigation $
-        subTabbed' $
+        (subTabbed' $
           boringWindows $
             avoidStruts $
               toggleLayouts (noBorders Full) $
                 smartBorders $
-                  layoutHook def
+                  layoutHook def) ||| simplestFloat
 
 main :: IO ()
 main = do
@@ -179,8 +178,8 @@ main = do
                                 ("M-C-<U>", shiftTo Prev emptyWS),
                                 ("M-C-c", spawn "/home/oliver/scripts/keylayoutchanger.sh"),
                                 ("M-S-C-]", spawn "env fish -c monitor_switcher"),
+                                ("M-S-C-[", spawn "env fish -c fix_mouse"),
                                 ("M-S-r", renameWorkspace def),
-                                ("M-S-h", spawn "sh -c 'systemctl hibernate"),
                                 -- mpd
                                 ("M-<XF86AudioPlay>", spawn "mpc toggle"),
                                 ("M-<XF86AudioPrev>", spawn "mpc prev"),
@@ -189,8 +188,8 @@ main = do
                                 ("M-<XF86AudioRaiseVolume>", spawn "mpc volume +2"),
                                 ("<XF86AudioLowerVolume>", spawn "amixer -q sset Master 3%-"),
                                 ("<XF86AudioRaiseVolume>", spawn "amixer -q sset Master 3%+"),
-                                -- ("<XF86MonBrightnessDown>", spawn ""),
-                                -- ("<XF86MonBrightnessUp>",   spawn ""),
+                                ("<XF86MonBrightnessDown>", spawn "xbacklight -dec 10"),
+                                ("<XF86MonBrightnessUp>",   spawn "xbacklight -inc 10"),
                                 -- ("M-<F10>", spawn ""),
                                 -- ("M-<F11>", spawn "")
                                 ("M-C-h", sendMessage $ pullGroup L),
@@ -199,8 +198,8 @@ main = do
                                 ("M-C-j", sendMessage $ pullGroup D),
                                 ("M-C-m", withFocused (sendMessage . MergeAll)),
                                 ("M-C-u", withFocused (sendMessage . UnMerge)),
-                                ("M-<Tab>", onGroup W.focusUp'),
-                                ("M-S-<Tab>", onGroup W.focusDown'),
+                                ("M-<Tab>", onGroup W.focusDown'),
+                                ("M-S-<Tab>", onGroup W.focusUp'),
                                 ("M-j", focusDown),
                                 ("M-k", focusUp)
                               ]
